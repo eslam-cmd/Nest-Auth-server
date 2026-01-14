@@ -8,8 +8,7 @@ async function bootstrap() {
   app.use(cookieParser());
 
   app.enableCors({
-    origin: 'http://localhost:3000',
-    'https://github.com/eslam-cmd/Nest-Auth-client': true,
+    origin: 'https://nest-auth-client.vercel.app',
     credentials: true,
   });
 
