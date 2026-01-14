@@ -1,14 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import cookieParser from 'cookie-parser'; // لاحظ بدون *
+import cookieParser from 'cookie-parser'; 
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());
 
-  app.enableCors({
-    origin: 'https://nest-auth-client.vercel.app',
+   app.enableCors({
+    origin: [
+      'https://nest-auth-client.vercel.app', 
+      'http://localhost:3000',            
+    ],
     credentials: true,
   });
 
