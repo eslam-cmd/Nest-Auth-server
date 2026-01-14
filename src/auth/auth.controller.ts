@@ -26,10 +26,14 @@ export class AuthController {
 
   // إعدادات الكوكيز حسب البيئة
   private cookieOptions(maxAge: number) {
+    // حل مشكلة TypeScript مع sameSite
+    const sameSite: 'strict' | 'lax' =
+      process.env.NODE_ENV === 'production' ? 'strict' : 'lax';
+
     return {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production' ? true : false,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite,
       maxAge,
     };
   }
@@ -54,8 +58,8 @@ export class AuthController {
         { expiresIn: '7d' },
       );
 
-      // تخزين refresh token في قاعدة البيانات
-      await this.authService.login(user.email, dto.password);
+      // تخزين refresh token في قاعدة البيانات بطريقة آمنة
+      await this.authService.storeRefreshToken(user.id, refreshToken);
 
       // كتابة الكوكيز
       res.cookie('access_token', accessToken, this.cookieOptions(15 * 60 * 1000));
@@ -150,6 +154,6 @@ export class AuthController {
 
     res.clearCookie('access_token');
     res.clearCookie('refresh_token');
-    return res.json({ success: true, ...result });
+    return res.json({ success: true, message: 'تم حذف الحساب بنجاح' });
   }
 }

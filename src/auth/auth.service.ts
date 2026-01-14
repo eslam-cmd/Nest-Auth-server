@@ -116,4 +116,11 @@ export class AuthService {
     await this.userRepo.delete({ id: userId });
     return { message: 'تم حذف الحساب بنجاح' };
   }
+
+  async storeRefreshToken(userId: string, refreshToken: string): Promise<void> {
+    await this.userRepo.update(
+      { id: userId },
+      { refreshToken: refreshToken },
+    );
+  }
 }
