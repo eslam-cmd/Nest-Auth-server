@@ -118,9 +118,7 @@ export class AuthService {
   }
 
   async storeRefreshToken(userId: string, refreshToken: string): Promise<void> {
-    await this.userRepo.update(
-      { id: userId },
-      { refreshToken: refreshToken },
-    );
-  }
+  const hashedToken = await bcrypt.hash(refreshToken, 10);
+  await this.userRepo.update({ id: userId }, { refreshToken: hashedToken });
+}
 }
