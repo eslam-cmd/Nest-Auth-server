@@ -24,17 +24,18 @@ export class AuthController {
     private readonly jwtService: JwtService,
   ) {}
 
-  // إعدادات الكوكيز حسب البيئة
+  // إعدادات الكوكيز المتوافقة مع اختلاف المنافذ محلياً وفي الإنتاج
   private cookieOptions(maxAge: number) {
-    // حل مشكلة TypeScript مع sameSite
-    const sameSite: 'strict' | 'lax' =
-      process.env.NODE_ENV === 'production' ? 'strict' : 'lax';
+    const isProd = process.env.NODE_ENV === 'production';
 
     return {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite,
+      // يجب أن تكون true في المتصفحات الحديثة عند استخدام sameSite: 'none' محلياً أو في الإنتاج
+      secure: true,
+      // 'none' تسمح بنقل الكوكي بين localhost:3000 و localhost:3001
+      sameSite: isProd ? ('strict' as const) : ('none' as const),
       maxAge,
+      path: '/', // متاح في كامل مسارات الموقع
     };
   }
 
@@ -42,47 +43,78 @@ export class AuthController {
   @Post('register')
   async register(@Body() dto: RegisterDto, @Res() res: Response) {
     try {
+      // 1. سجل المستخدم بدون توكنات
       const user = await this.authService.register(
         dto.email,
         dto.password,
         dto.username,
       );
 
-      // إنشاء التوكنات
-      const accessToken = this.jwtService.sign(
-        { sub: user.id, email: user.email },
-        { expiresIn: '15m' },
-      );
-      const refreshToken = this.jwtService.sign(
-        { sub: user.id, email: user.email },
-        { expiresIn: '7d' },
-      );
+      // 2. أنشئ التوكنات بعد التسجيل
+      const payload = { sub: user.id, email: user.email };
 
-      // تخزين refresh token في قاعدة البيانات بطريقة آمنة
+      const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+      const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+
+      // 3. خزن refresh token في قاعدة البيانات
       await this.authService.storeRefreshToken(user.id, refreshToken);
 
-      // كتابة الكوكيز
-      res.cookie('access_token', accessToken, this.cookieOptions(15 * 60 * 1000));
-      res.cookie('refresh_token', refreshToken, this.cookieOptions(7 * 24 * 60 * 60 * 1000));
+      // 4. ضع التوكنات في الكوكيز
+      res.cookie(
+        'access_token',
+        accessToken,
+        this.cookieOptions(15 * 60 * 1000),
+      );
+      res.cookie(
+        'refresh_token',
+        refreshToken,
+        this.cookieOptions(7 * 24 * 60 * 60 * 1000),
+      );
 
-      return res.json({ success: true, message: 'تم التسجيل بنجاح', user });
+      return res.json({
+        success: true,
+        message: 'تم التسجيل بنجاح',
+        user,
+      });
     } catch (error) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        error.message || 'حدث خطأ أثناء التسجيل',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
   // تسجيل الدخول
   @Post('login')
   async login(@Body() dto: LoginDto, @Res() res: Response) {
-    const { accessToken, refreshToken, user } = await this.authService.login(
-      dto.email,
-      dto.password,
-    );
+    try {
+      const { accessToken, refreshToken, user } = await this.authService.login(
+        dto.email,
+        dto.password,
+      );
 
-    res.cookie('access_token', accessToken, this.cookieOptions(15 * 60 * 1000));
-    res.cookie('refresh_token', refreshToken, this.cookieOptions(7 * 24 * 60 * 60 * 1000));
+      res.cookie(
+        'access_token',
+        accessToken,
+        this.cookieOptions(15 * 60 * 1000),
+      );
+      res.cookie(
+        'refresh_token',
+        refreshToken,
+        this.cookieOptions(7 * 24 * 60 * 60 * 1000),
+      );
 
-    return res.json({ success: true, message: 'تم تسجيل الدخول بنجاح', user });
+      return res.json({
+        success: true,
+        message: 'تم تسجيل الدخول بنجاح',
+        user,
+      });
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'بيانات الدخول غير صحيحة',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
   }
 
   // تجديد التوكن باستخدام refresh_token
@@ -95,12 +127,24 @@ export class AuthController {
 
     try {
       const payload = this.jwtService.verify(token);
-      const { accessToken } = await this.authService.refresh(payload.sub, token);
+      const { accessToken } = await this.authService.refresh(
+        payload.sub,
+        token,
+      );
 
-      res.cookie('access_token', accessToken, this.cookieOptions(15 * 60 * 1000));
+      res.cookie(
+        'access_token',
+        accessToken,
+        this.cookieOptions(15 * 60 * 1000),
+      );
 
-      return res.json({ success: true, message: 'تم تجديد التوكن بنجاح' });
-    } catch {
+      return res.json({
+        success: true,
+        message: 'تم تجديد التوكن بنجاح',
+      });
+    } catch (error) {
+      res.clearCookie('access_token');
+      res.clearCookie('refresh_token');
       throw new HttpException('التوكن غير صالح', HttpStatus.UNAUTHORIZED);
     }
   }
@@ -122,38 +166,78 @@ export class AuthController {
   // جلب الملف الشخصي
   @Get('me')
   async getProfile(@Req() req: Request) {
-    const userId = this.getUserIdFromCookie(req);
-    const user = await this.authService.getProfile(userId);
-    return { success: true, user };
+    try {
+      const userId = this.getUserIdFromCookie(req);
+      const user = await this.authService.getProfile(userId);
+      return { success: true, user };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'حدث خطأ',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
   }
 
   // تحديث اسم المستخدم
   @Put('update')
   async updateProfile(@Req() req: Request, @Body() dto: UpdateProfileDto) {
-    const userId = this.getUserIdFromCookie(req);
-    const user = await this.authService.updateProfile(userId, dto.username);
-    return { success: true, message: 'تم تحديث الملف الشخصي', user };
+    try {
+      const userId = this.getUserIdFromCookie(req);
+      const user = await this.authService.updateProfile(userId, dto.username);
+      return {
+        success: true,
+        message: 'تم تحديث الملف الشخصي',
+        user,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'حدث خطأ أثناء التحديث',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 
   // تسجيل الخروج
   @Post('logout')
   async logout(@Req() req: Request, @Res() res: Response) {
-    const userId = this.getUserIdFromCookie(req);
-    await this.authService.logout(userId);
+    try {
+      const userId = this.getUserIdFromCookie(req);
+      await this.authService.logout(userId);
 
-    res.clearCookie('access_token');
-    res.clearCookie('refresh_token');
-    return res.json({ success: true, message: 'تم تسجيل الخروج بنجاح' });
+      res.clearCookie('access_token');
+      res.clearCookie('refresh_token');
+
+      return res.json({
+        success: true,
+        message: 'تم تسجيل الخروج بنجاح',
+      });
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'حدث خطأ أثناء تسجيل الخروج',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 
   // حذف الحساب
   @Delete('delete')
   async deleteAccount(@Req() req: Request, @Res() res: Response) {
-    const userId = this.getUserIdFromCookie(req);
-    const result = await this.authService.deleteAccount(userId);
+    try {
+      const userId = this.getUserIdFromCookie(req);
+      await this.authService.deleteAccount(userId);
 
-    res.clearCookie('access_token');
-    res.clearCookie('refresh_token');
-    return res.json({ success: true, message: 'تم حذف الحساب بنجاح' });
+      res.clearCookie('access_token');
+      res.clearCookie('refresh_token');
+
+      return res.json({
+        success: true,
+        message: 'تم حذف الحساب بنجاح',
+      });
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'حدث خطأ أثناء حذف الحساب',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 }

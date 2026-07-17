@@ -19,5 +19,4 @@ export class User {
 
   @Column({type: 'text', nullable: true })
   refreshToken?: string | null; 
-
 }

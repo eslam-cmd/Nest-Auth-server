@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { User } from './entity/user.entity';
 
@@ -21,11 +22,20 @@ export class AuthService {
   async register(email: string, password: string, username?: string) {
     const existingUser = await this.userRepo.findOne({ where: { email } });
     if (existingUser) {
-      throw new HttpException('البريد الإلكتروني موجود مسبقًا', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'البريد الإلكتروني موجود مسبقًا',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    const user = this.userRepo.create({ email, password: hashed, username });
+
+    const user = this.userRepo.create({
+      email,
+      password: hashed,
+      username,
+    });
+
     const savedUser = await this.userRepo.save(user);
 
     const { password: _, refreshToken, ...safeUser } = savedUser;
@@ -49,9 +59,8 @@ export class AuthService {
     const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
     const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
 
-    // خزّن refresh token مشفّر في قاعدة البيانات
-    user.refreshToken = await bcrypt.hash(refreshToken, 10);
-    await this.userRepo.save(user);
+    // خزّن نسخة مشفرة (SHA256) من refreshToken
+    await this.storeRefreshToken(user.id, refreshToken);
 
     const { password: _, refreshToken: __, ...safeUser } = user;
     return { accessToken, refreshToken, user: safeUser };
@@ -64,8 +73,11 @@ export class AuthService {
       throw new UnauthorizedException('غير مصرح بالدخول');
     }
 
-    const isMatch = await bcrypt.compare(refreshToken, user.refreshToken);
-    if (!isMatch) {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(refreshToken)
+      .digest('hex');
+    if (hashedToken !== user.refreshToken) {
       throw new UnauthorizedException('التوكن غير صالح');
     }
 
@@ -117,8 +129,12 @@ export class AuthService {
     return { message: 'تم حذف الحساب بنجاح' };
   }
 
+  /** تخزين التوكن في قاعدة البيانات */
   async storeRefreshToken(userId: string, refreshToken: string): Promise<void> {
-  const hashedToken = await bcrypt.hash(refreshToken, 10);
-  await this.userRepo.update({ id: userId }, { refreshToken: hashedToken });
-}
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(refreshToken)
+      .digest('hex');
+    await this.userRepo.update(userId, { refreshToken: hashedToken });
+  }
 }

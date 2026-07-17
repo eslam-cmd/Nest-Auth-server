@@ -10,7 +10,7 @@ import { User } from './entity/user.entity';
 @Module({
   imports: [
     ConfigModule.forRoot(),
-    TypeOrmModule.forFeature([User]), // تسجيل الـ User entity
+    TypeOrmModule.forFeature([User]), 
     JwtModule.registerAsync({  
       imports: [ConfigModule],
       inject: [ConfigService], 
