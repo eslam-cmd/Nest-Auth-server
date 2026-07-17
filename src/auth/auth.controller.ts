@@ -24,18 +24,13 @@ export class AuthController {
     private readonly jwtService: JwtService,
   ) {}
 
-  // إعدادات الكوكيز المتوافقة مع اختلاف المنافذ محلياً وفي الإنتاج
   private cookieOptions(maxAge: number) {
-    const isProd = process.env.NODE_ENV === 'production';
-
     return {
       httpOnly: true,
-      // يجب أن تكون true في المتصفحات الحديثة عند استخدام sameSite: 'none' محلياً أو في الإنتاج
-      secure: true,
-      // 'none' تسمح بنقل الكوكي بين localhost:3000 و localhost:3001
-      sameSite: isProd ? ('strict' as const) : ('none' as const),
+      secure: true, // إجباري لـ sameSite: 'none'
+      sameSite: 'none' as const, // ⚠️ تم التعديل هنا: نستخدم 'none' دائماً للسماح بعبور الكوكيز بين النطاقات المختلفة
       maxAge,
-      path: '/', // متاح في كامل مسارات الموقع
+      path: '/',
     };
   }
 
