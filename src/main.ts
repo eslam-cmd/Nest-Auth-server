@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import * as cookieParser from 'cookie-parser'; // 👈 التعديل هنا لضمان عمل الحزمة بأمان في TS
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,7 +12,9 @@ async function bootstrap() {
       'https://nest-auth-client.vercel.app',
       'http://localhost:3000', // منفذ تطبيق الفرونت إند Next.js
     ],
-    credentials: true, // للسماح بتبادل الكوكيز
+    credentials: true, 
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',// للسماح بتبادل الكوكيز
   });
 
   // السيرفر يعمل على المنفذ 3001
